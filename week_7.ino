@@ -1,101 +1,103 @@
 #include <Servo.h>
 
-// Pin Motor 
-#define PWMA 3   // PWM Motor Kanan (harus pin PWM)
-#define PWMB 10  // PWM Motor Kiri (harus pin PWM)
-#define DA 6     // Arah Motor Kanan
-#define DB 7     // Arah Motor Kiri
+// ========== PIN DEFINITIONS ==========
+#define SENSOR_PIN A0    // Sensor analog di A0
+#define MOTOR_IN1 5      // IN1 L298N -> Arduino 5 (PWM)
+#define MOTOR_IN2 6      // IN2 L298N -> Arduino 6 (PWM)
+#define MOTOR_IN3 7      // IN3 L298N -> Arduino 7
+#define MOTOR_IN4 8      // IN4 L298N -> Arduino 8
+#define SERVO_PIN 9      // Servo di pin 9
 
-// Pin Sensor Garis
-#define SENSOR1 A0
-#define SENSOR2 A1
-#define SENSOR3 A2
-#define SENSOR4 A3
-#define SENSOR5 A4
-
-#define SERVO_PIN 9  // Pin Servo (PWM)
-
+// ========== VARIABEL GLOBAL ==========
 Servo myServo;
+int lastSensorValue = 0;
 
+// ========== SETUP ==========
 void setup() {
   Serial.begin(115200);
   
-  // Inisialisasi Motor
-  pinMode(PWMA, OUTPUT);
-  pinMode(PWMB, OUTPUT);
-  pinMode(DA, OUTPUT);
-  pinMode(DB, OUTPUT);
-  stopMotors();
-
-  // Inisialisasi Servo
+  // Inisialisasi pin motor
+  pinMode(MOTOR_IN1, OUTPUT);
+  pinMode(MOTOR_IN2, OUTPUT);
+  pinMode(MOTOR_IN3, OUTPUT);
+  pinMode(MOTOR_IN4, OUTPUT);
+  
+  // Inisialisasi servo
   myServo.attach(SERVO_PIN);
   myServo.write(90);  // Posisi netral
+  
+  // Stop motor saat startup
+  stopMotors();
+  
+  Serial.println("System Ready - Waiting for commands...");
 }
 
+// ========== LOOP UTAMA ==========
 void loop() {
-  bacaSensor();
-  bacaSerial();
+  // 1. Baca sensor dan kirim ke Python
+  readAndSendSensor();
+  
+  // 2. Handle perintah dari Python
+  handleSerialCommands();
+  
+  delay(50);  // Jeda untuk stabilitas
 }
 
-void bacaSerial() {
-  if (Serial.available() > 0) {
-    String buff = Serial.readStringUntil('\n');
+// ========== FUNGSI BACA SENSOR ==========
+void readAndSendSensor() {
+  int sensorValue = analogRead(SENSOR_PIN);
+  
+  // Hanya kirim jika nilai berubah (untuk efisiensi)
+  if(abs(sensorValue - lastSensorValue) > 5) {
+    Serial.println(sensorValue);
+    lastSensorValue = sensorValue;
+  }
+}
+
+// ========== FUNGSI HANDLE SERIAL ==========
+void handleSerialCommands() {
+  if(Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
     
-    if (buff.startsWith("R:")) {  // Motor Kanan
-      int speed = buff.substring(2).toInt();
-      setMotorKanan(speed);
+    // Debug: Tampilkan perintah yang diterima
+    Serial.print("CMD: ");
+    Serial.println(command);
+    
+    if(command.startsWith("Motor:")) {
+      int speed = command.substring(6).toInt();
+      speed = constrain(speed, 0, 255);
+      forward(speed);
     } 
-    else if (buff.startsWith("L:")) {  // Motor Kiri
-      int speed = buff.substring(2).toInt();
-      setMotorKiri(speed);
-    }
-    else if (buff.startsWith("S:")) {  // Servo
-      int angle = buff.substring(2).toInt();
-      angle = constrain(angle, 0, 180);  // Batasi 0-180°
+    else if(command.startsWith("Servo:")) {
+      int angle = command.substring(6).toInt();
+      angle = constrain(angle, 0, 180);
       myServo.write(angle);
     }
+    else if(command == "STOP") {
+      stopMotors();
+    }
   }
 }
 
-// Fungsi untuk motor kanan (nilai + = CW, nilai - = CCW)
-void setMotorKanan(int speed) {
-  if (speed > 0) {
-    digitalWrite(DA, HIGH);  // CW
-    analogWrite(PWMA, speed);
-  } else if (speed < 0) {
-    digitalWrite(DA, LOW);   // CCW
-    analogWrite(PWMA, abs(speed));
-  } else {
-    analogWrite(PWMA, 0);    // Stop
-  }
+// ========== FUNGSI KONTROL MOTOR ==========
+void forward(int speed) {
+  analogWrite(MOTOR_IN1, speed);
+  digitalWrite(MOTOR_IN2, LOW);
+  analogWrite(MOTOR_IN3, speed);
+  digitalWrite(MOTOR_IN4, LOW);
 }
 
-// Fungsi untuk motor kiri (nilai + = CW, nilai - = CCW)
-void setMotorKiri(int speed) {
-  if (speed > 0) {
-    digitalWrite(DB, HIGH);  // CW
-    analogWrite(PWMB, speed);
-  } else if (speed < 0) {
-    digitalWrite(DB, LOW);   // CCW
-    analogWrite(PWMB, abs(speed));
-  } else {
-    analogWrite(PWMB, 0);    // Stop
-  }
+void backward(int speed) {
+  digitalWrite(MOTOR_IN1, LOW);
+  analogWrite(MOTOR_IN2, speed);
+  digitalWrite(MOTOR_IN3, LOW);
+  analogWrite(MOTOR_IN4, speed);
 }
 
 void stopMotors() {
-  analogWrite(PWMA, 0);
-  analogWrite(PWMB, 0);
-}
-
-void bacaSensor() {
-  static unsigned long lastSend = 0;
-  if (millis() - lastSend >= 100) {
-    Serial.print("S1:"); Serial.print(analogRead(SENSOR1));
-    Serial.print(",S2:"); Serial.print(analogRead(SENSOR2));
-    Serial.print(",S3:"); Serial.print(analogRead(SENSOR3));
-    Serial.print(",S4:"); Serial.print(analogRead(SENSOR4));
-    Serial.print(",S5:"); Serial.println(analogRead(SENSOR5));
-    lastSend = millis();
-  }
+  digitalWrite(MOTOR_IN1, LOW);
+  digitalWrite(MOTOR_IN2, LOW);
+  digitalWrite(MOTOR_IN3, LOW);
+  digitalWrite(MOTOR_IN4, LOW);
 }
