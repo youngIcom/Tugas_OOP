@@ -1,3 +1,4 @@
+#terbaru untuk week 6
 import serial
 import tkinter as tk
 from tkinter import ttk, messagebox
